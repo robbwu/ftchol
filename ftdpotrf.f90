@@ -16,7 +16,7 @@
 !   Panruo Wu(pwu@mines.edu)
 !   December 2011
 !  =====================================================================
-      SUBROUTINE FTDPOTRF( UPLO, N, A, LDA, INFO ) 
+      SUBROUTINE FTDPOTRF( UPLO, N, A, LDA, INFO , NB) 
       IMPLICIT NONE 
 !                                                                       
 !  -- LAPACK computational routine (version 3.4.0) --                   
@@ -35,8 +35,8 @@
 !  =====================================================================
 !                                                                       
 !     .. Parameters ..                                                  
-      DOUBLE PRECISION   ONE, ZERO 
-      PARAMETER          ( ONE = 1.0D+0, ZERO = 0.0D+0 ) 
+      DOUBLE PRECISION   ONE, ZERO, EPS
+      PARAMETER          ( ONE = 1.0D+0, ZERO = 0.0D+0, EPS = 1.0D-7 ) 
 !     ..                                                                
 !     .. Local Scalars ..                                               
       LOGICAL            UPPER 
@@ -52,6 +52,9 @@
 !     ..                                                                
 !     .. Intrinsic Functions ..                                         
       INTRINSIC          MAX, MIN 
+
+      DOUBLE PRECISION, ALLOCATABLE  ::  CHKSUM(:)
+      REAL                          :: T1, T2
 !     ..                                                                
 !     .. Executable Statements ..                                       
 !                                                                       
@@ -79,14 +82,21 @@
 !     Determine the block size for this environment.                    
 !                                                                       
       !NB = ILAENV( 1, 'DPOTRF', UPLO, N, -1, -1, -1 )                  
-      write (*,*) "bs",ILAENV( 1, 'DPOTRF', UPLO, N, -1, -1, -1 ) 
+      !write (*,*) "bs",ILAENV( 1, 'DPOTRF', UPLO, N, -1, -1, -1 ) 
                                                                         
-      NB = 3 
+      !NB = 96
+      CALL CPU_TIME(T1)
+      ALLOCATE(CHKSUM(NB-2))
+      CALL RANDOM_NUMBER(CHKSUM)
+      CALL BLDCHK3(NB, A, N, CHKSUM )
+      CALL CPU_TIME(T2)
+      PRINT *, 'BLDCHK3 takes', T2-T1
+
       IF( NB.LE.1 .OR. NB.GE.N ) THEN 
 !                                                                       
 !        Use unblocked code.                                            
 !                                                                       
-         CALL MYDPOTF2( UPLO, N, A, LDA, INFO ) 
+         CALL MYDPOTF3( UPLO, N, A, LDA, INFO ) 
       ELSE 
 !                                                                       
 !        Use blocked code.                                              
@@ -123,7 +133,7 @@
 !                                                                       
 !           Compute the Cholesky factorization A = L*L**T.              
 !                                                                       
-            DO 20 J = 1, N-NB, NB 
+            DO 20 J = 1, N, NB 
 !                                                                       
 !              Update and factorize the current diagonal block and test 
 !              for non-positive-definiteness.                           
@@ -131,12 +141,12 @@
        200     JB = MIN( NB, N-J+1 ) 
                CALL DSYRK( 'Lower', 'No transpose', JB, J-1, -ONE,      &
      &                     A( J, 1 ), LDA, ONE, A( J, J ), LDA )        
-               CALL MYDPOTF2( 'Lower', JB, A( J, J ), LDA, INFO ) 
+               CALL MYDPOTF3( 'Lower', JB, A( J, J ), LDA, INFO ) 
                                                                         
-               CALL CHK1(NB, A, N, J, ERR)
-               IF ( ERR.EQ.-1 ) THEN
-                  GOTO 200
-               END IF
+               !CALL CHK1(NB, A, N, J, ERR)
+               !IF ( ERR.EQ.-1 ) THEN
+                  !GOTO 200
+               !END IF
 !                                                                       
 !               if the right-bottom corner is (almost) zero,            
 !               set it to 1. Threshold needs reviewing.                 
@@ -144,6 +154,9 @@
 !                                                                       
                IF ( ABS( A( J+JB-1, J+JB-1) ) .LT. 1.0D-7 ) THEN 
                    A( J+JB-1, J+JB-1) = ONE 
+               END IF 
+               IF ( ABS( A( J+JB-2, J+JB-2) ) .LT. 1.0D-7 ) THEN 
+                   A( J+JB-2, J+JB-2) = ONE 
                END IF 
                IF( INFO.NE.0 )                                          &
      &            GO TO 30                                              
@@ -158,17 +171,21 @@
                   CALL DTRSM( 'Right', 'Lower', 'Transpose', 'Non-unit',&
      &                        N-J-JB+1, JB, ONE, A( J, J ), LDA,        &
      &                        A( J+JB, J ), LDA )                       
-                  CALL CHK2(NB, A, N, J, ERR)
+                  !CALL CHK2(NB, A, N, J, ERR)
                END IF 
-               WRITE (*,*) "Iteration J=" 
-               WRITE (*,*) J 
-                do ii=1,N 
-                    do jj = 1,N 
-                        write (*,100, advance="no") A(ii, jj) 
-                    end do 
-                    write (*,*) " " 
-                end do 
-  100           format(F6.4, 2x) 
+               IF ( A(J+JB-2, J+JB-2).EQ.ONE .AND. A(J+JB-1, J+JB-1).EQ.ONE) THEN
+                  A(J+JB-2, J+JB-2) = ZERO
+                  A(J+JB-1, J+JB-1) = ZERO
+               END IF
+               !WRITE (*,*) "ITERATION J=" , J
+               !!WRITE (*,*) J 
+                !DO II=1,N 
+                    !DO JJ = 1,N 
+                        !WRITE (*,100, ADVANCE="NO") A(II, JJ) 
+                    !END DO 
+                    !WRITE (*,*) " " 
+                !END DO 
+  !100           FORMAT(F6.4, 2X) 
    20       CONTINUE 
          END IF 
       END IF 
@@ -178,6 +195,7 @@
       INFO = INFO + J - 1 
 !                                                                       
    40 CONTINUE 
+      DEALLOCATE(CHKSUM)
       RETURN 
 !                                                                       
 !     End of DPOTRF                                                     
@@ -325,42 +343,45 @@
                                                                         
       END                                           
       ! 2 local checksums no global
-      !SUBROUTINE BLDCHK3(NB, A, N, CHKSUM) 
-      !IMPLICIT NONE
+      SUBROUTINE BLDCHK3(NB, A, N, CHKSUM) 
+      IMPLICIT NONE
       
-      !DOUBLE PRECISION  A(N,N)
-      !INTEGER           NB, N, CHKSUM(NB-2)
+      DOUBLE PRECISION  A(N,N), CHKSUM(NB-2)
+      INTEGER           NB, N
 
-      !INTEGER           I, J, II, JJ
-      !DOUBLE PRECISION  ZERO, ONE
-      !PARAMETER         ( ZERO = 0.0D+0, ONE = 1.0D+0 )
+      INTEGER           I, J, II, JJ
+      DOUBLE PRECISION  ZERO, ONE
+      PARAMETER         ( ZERO = 0.0D+0, ONE = 1.0D+0 )
 
-      !DO J = 1, N, NB
-         !DO  I = J, N, NB
-            !IF (I.EQ.J) THEN
-               !DO JJ = J, J+NB-3
-                  !DO II = 1, JJ-1
-                     !A(II, JJ) = A(JJ, II)
-                  !END DO
-               !END DO
-            !END IF
-            !A(I+NB-2:I+NB-1, J:J+NB-1) = ZERO
-            !A(I:I+NB-1, J+NB-2:J+NB-1) = ZERO
-            !DO II = I, I+NB-3
-               !A(I+NB-2, J:J+NB-3) = A(I+NB-2, J:J+NB-3) + A(II, J:J+NB-3)
-               !A(I+NB-1, J:J+NB-3) = A(I+NB-1, J:J+NB-3) + A(II, J:J+NB-3) * CHKSUM(II-I+1)
-            !END DO
-            !DO JJ = J, J+NB-3
-               !A(I:I+NB-3, J+NB-2) = A(I:I+NB-3, J+NB-2) + A(I:I+NB-2, JJ)
-               !A(I:I+NB-3, J+NB-1) = A(I:I+NB-3, J+NB-1) + A(I:I+NB-2, JJ) * CHKSUM(JJ-J+1)
-            !END DO
-            !A(I+NB-2, J+NB-2) = SUM( A(I+NB-2, J:J+NB-3) )
-            !A(I+NB-1, J+NB-2) = SUM( A(I+NB-1, J:J+NB-3) * CHKSUM )
-            !A(I+NB-1, J+NB-2) = SUM( A(I+NB-1, J:J+NB-3) )
+      DO J = 1, N, NB
+         DO  I = J, N, NB
+            IF (I.EQ.J) THEN
+               DO JJ = J, J+NB-3
+                  DO II = 1, JJ-1
+                     A(II, JJ) = A(JJ, II)
+                  END DO
+               END DO
+            END IF
+            A(I+NB-2:I+NB-1, J:J+NB-1) = ZERO
+            A(I:I+NB-1, J+NB-2:J+NB-1) = ZERO
+            DO II = I, I+NB-3
+               A(I+NB-2, J:J+NB-3) = A(I+NB-2, J:J+NB-3) + A(II, J:J+NB-3)
+               A(I+NB-1, J:J+NB-3) = A(I+NB-1, J:J+NB-3) + A(II, J:J+NB-3) * CHKSUM(II-I+1)
+            END DO
+            DO JJ = J, J+NB-3
+               A(I:I+NB-3, J+NB-2) = A(I:I+NB-3, J+NB-2) + A(I:I+NB-3, JJ)
+               A(I:I+NB-3, J+NB-1) = A(I:I+NB-3, J+NB-1) + A(I:I+NB-3, JJ) * CHKSUM(JJ-J+1)
+            END DO
+            A(I+NB-2, J+NB-2) = SUM( A(I+NB-2, J:J+NB-3) )
+            A(I+NB-1, J+NB-1) = SUM( A(I+NB-1, J:J+NB-3) * CHKSUM )
+            A(I+NB-1, J+NB-2) = SUM( A(I:I+NB-3, j+NB-2) * CHKSUM )
+            A(I+NB-2, J+NB-1) = SUM( A(I+NB-2, J:J+NB-3) * CHKSUM )
+         END DO
+      END DO
 
 
 
-      !END
+      END SUBROUTINE BLDCHK3
                                                                         
       SUBROUTINE CHK1(NB, A, N, I, INFO) 
       IMPLICIT NONE 
