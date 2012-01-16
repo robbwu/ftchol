@@ -1,18 +1,18 @@
 program  dpotrf_test
 implicit none
-include 'f90papi.h'
+!include 'f90papi.h'
 integer                 :: NB, N, i, j, k, INFO, N1, II, JJ, NB1
-parameter               ( NB = 112, N = 4000/NB*NB)
+parameter               ( NB = 112, N = 10000/NB*NB)
 
-double precision        :: A(N, N), B(N,N), CHK(NB-2), A1(N/NB*(NB-2), N/NB*(NB-2))
+double precision        :: A(N, N), B(N,N), CHK(NB-2), A1(N/NB*(NB-2), N/NB*(NB-2)), ONE,ZERO
+parameter               ( ONE = 1.0D+0, ZERO = 0.0D+0 )
 real                    :: mfl,T1, T2, rt, pt
 integer                 ::  chkflg, ncnt
 integer(kind=8)         :: fl
 external ILAENV
 
 
-call PAPIF_num_counters(ncnt)
-print *, 'ncnt ', ncnt
+!print *, 'ncnt ', ncnt
 !NB1 = ILAENV( 1, 'DPOTRF', 'L', 1000, -1, -1, -1 )
 !print *, 'NB1', NB1
 N1 = N/NB*(NB-2)
@@ -21,7 +21,8 @@ call random_number(B)
 
 !print *, 'B:'
 !call pmat(B, N, N, N)
-A1 = matmul(B(1:N1, 1:N1), transpose(B(1:N1,1:N1)))
+!A1 = matmul(B(1:N1, 1:N1), transpose(B(1:N1,1:N1)))
+call dgemm('n','t', N1, N1, N1, ONE, B, N, B, N, ZERO, A1, N1)
 !call RANDOM_NUMBER(CHK)
 !print *, 'chksum', CHK
 
@@ -35,15 +36,9 @@ END DO
 !print *, 'A1'
 !call pmat(A1, N1, N1, N1)
 call CPU_TIME(T1)
-call PAPIF_flops(rt, pt,fl, mfl, chkflg)
-if (chkflg .ne. 0) then 
-   print *, 'papif_flops error', chkflg
-end if
 call DPOTRF('l', N1, A1, N1, INFO)
-call PAPIF_flops(rt, pt,fl, mfl, chkflg)
 call CPU_TIME(T2)
 print *, 'DPOTRF time', T2-T1, 'seconds', 'with flops:', (N1/1.0D+3)**3/3/(T2-T1)
-print *, 'PAPI MFLOPS', mfl
 if (INFO.NE.0) print *, 'mydpotf3 info', INFO
 !print *, 'factorized A1'
 !call pmat(A1, N1, N1, N1)
@@ -55,12 +50,12 @@ if (INFO.NE.0) print *, 'mydpotf3 info', INFO
 !call pmat(A, N, N, N)
 
 call CPU_TIME(T1)
-call PAPIF_flops(rt, pt,fl, mfl, chkflg)
+!call PAPIF_flops(rt, pt,fl, mfl, chkflg)
 call ftdpotrf('l', N, A, N, INFO, NB)
-call PAPIF_flops(rt, pt,fl, mfl, chkflg)
+!call PAPIF_flops(rt, pt,fl, mfl, chkflg)
 call CPU_TIME(T2)
 print *, 'FTDPOTRF time', T2-T1, 'seconds', 'with flops:', (N/1.0D+3)**3/3/(T2-T1), 'effective flops', (N1/1.0D+3)**3/(T2-T1)/3
-print *, 'PAPI mflops ', mfl
+!print *, 'PAPI mflops ', mfl
 if (INFO.NE.0) print *, 'ftdpotrf info', INFO
 !print *, 'after DPOTRF'
 !print *, 'INFO', INFO

@@ -35,7 +35,7 @@
 !  =====================================================================
 !                                                                       
 !     .. Parameters ..                                                  
-      DOUBLE PRECISION   ONE, ZERO, EPS
+      DOUBLE PRECISION   ONE, ZERO, EPS, TMPA(NB, NB)
       PARAMETER          ( ONE = 1.0D+0, ZERO = 0.0D+0, EPS = 1.0D-7 ) 
 !     ..                                                                
 !     .. Local Scalars ..                                               
@@ -85,12 +85,12 @@
       !write (*,*) "bs",ILAENV( 1, 'DPOTRF', UPLO, N, -1, -1, -1 ) 
                                                                         
       !NB = 96
-      CALL CPU_TIME(T1)
+      !CALL CPU_TIME(T1)
       ALLOCATE(CHKSUM(NB-2))
       CALL RANDOM_NUMBER(CHKSUM)
       CALL BLDCHK3(NB, A, N, CHKSUM )
-      CALL CPU_TIME(T2)
-      PRINT *, 'BLDCHK3 takes', T2-T1
+      !CALL CPU_TIME(T2)
+      !PRINT *, 'BLDCHK3 takes', T2-T1
 
       IF( NB.LE.1 .OR. NB.GE.N ) THEN 
 !                                                                       
@@ -141,7 +141,13 @@
        200     JB = MIN( NB, N-J+1 ) 
                CALL DSYRK( 'Lower', 'No transpose', JB, J-1, -ONE,      &
      &                     A( J, 1 ), LDA, ONE, A( J, J ), LDA )        
+               TMPA = A(J:J+NB-1, J:J+NB-1)
+               A(J,J) = 12.24
                CALL MYDPOTF3( 'Lower', JB, A( J, J ), LDA, INFO ) 
+               IF (INFO .NE. 0) THEN
+                  A(J:J+NB-1, J:J+NB-1) = TMPA
+                  CALL MYDPOTF3( 'Lower', JB, A( J, J ), LDA, INFO ) 
+               END IF
                                                                         
                !CALL CHK1(NB, A, N, J, ERR)
                !IF ( ERR.EQ.-1 ) THEN
@@ -165,9 +171,19 @@
 !                 Compute the current block column.                     
 !                                                                       
                   ! Here we should use ftdgemm instead..
-                  CALL DGEMM( 'No transpose', 'Transpose', N-J-JB+1, JB,&
+                  !CALL DGEMM( 'No transpose', 'Transpose', N-J-JB+1, JB,&
+     !&                        J-1, -ONE, A( J+JB, 1 ), LDA, A( J, 1 ),  &
+     !&                        LDA, ONE, A( J+JB, J ), LDA )             
+                  IF (J > 1) THEN
+                     !PRINT *,'original', 'A(',J+JB,1,')=',A(J+JB,1)
+                     A(J+JB,1) =  12.34
+                     !PRINT *, 'before ftdgemm','A(',J+JB,1,')=',A(J+JB,1)
+                  END IF
+                  !PRINT *,'Calling FTDGEMM, J=', J
+                  CALL FTDGEMM( 'N', 'T', N-J-JB+1, JB,&
      &                        J-1, -ONE, A( J+JB, 1 ), LDA, A( J, 1 ),  &
-     &                        LDA, ONE, A( J+JB, J ), LDA )             
+     &                        LDA, ONE, A( J+JB, J ), LDA, NB, CHKSUM)             
+                  !PRINT *, 'after ftdgemm','A(',J+JB,1,')=',A(J+JB,1)
                   CALL DTRSM( 'Right', 'Lower', 'Transpose', 'Non-unit',&
      &                        N-J-JB+1, JB, ONE, A( J, J ), LDA,        &
      &                        A( J+JB, J ), LDA )                       
@@ -177,15 +193,6 @@
                   A(J+JB-2, J+JB-2) = ZERO
                   A(J+JB-1, J+JB-1) = ZERO
                END IF
-               !WRITE (*,*) "ITERATION J=" , J
-               !!WRITE (*,*) J 
-                !DO II=1,N 
-                    !DO JJ = 1,N 
-                        !WRITE (*,100, ADVANCE="NO") A(II, JJ) 
-                    !END DO 
-                    !WRITE (*,*) " " 
-                !END DO 
-  !100           FORMAT(F6.4, 2X) 
    20       CONTINUE 
          END IF 
       END IF 
